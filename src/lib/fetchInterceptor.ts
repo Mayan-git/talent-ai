@@ -10,7 +10,7 @@ export function setupFetchInterceptor() {
 
   const originalFetch = window.fetch;
 
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" 
       ? input 
       : input instanceof URL 
@@ -61,6 +61,21 @@ export function setupFetchInterceptor() {
 
     return originalFetch(input, init);
   };
+
+  try {
+    Object.defineProperty(window, "fetch", {
+      value: customFetch,
+      configurable: true,
+      writable: true,
+      enumerable: true,
+    });
+  } catch (e) {
+    try {
+      window.fetch = customFetch;
+    } catch (err) {
+      console.error("Failed to intercept window.fetch globally due to environment constraints:", err);
+    }
+  }
 
   console.log("🚀 TalentAI Client-Side Offline Failover Engine Active & Listening.");
 }

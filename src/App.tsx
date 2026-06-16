@@ -13,10 +13,27 @@ import JobMatcher from "./components/JobMatcher";
 import InterviewView from "./components/InterviewView";
 import ProfileView from "./components/ProfileView";
 
+// SaaS Premium Views
+import AtsChecker from "./components/AtsChecker";
+import ResumeBuilder from "./components/ResumeBuilder";
+import CareerCoach from "./components/CareerCoach";
+import LearningRoadmap from "./components/LearningRoadmap";
+import InterviewAnalyticsView from "./components/InterviewAnalyticsView";
+import VoiceInterview from "./components/VoiceInterview";
+import CareerChatbot from "./components/CareerChatbot";
+import PortfolioProjects from "./components/PortfolioProjects";
+import AdminPanel from "./components/AdminPanel";
+import NotificationCenter from "./components/NotificationCenter";
+
+import { Bell } from "lucide-react";
+import { saasStore } from "./lib/saasStore";
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>("dashboard");
   const [statsReloadKey, setStatsReloadKey] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Read session cache to retain login state on browser refresher
   useEffect(() => {
@@ -32,6 +49,15 @@ export default function App() {
       }
     }
   }, []);
+
+  // Update notification count
+  useEffect(() => {
+    if (user) {
+      const db = saasStore.get();
+      const count = db.notifications.filter(n => n.userId === user.id && !n.read).length;
+      setUnreadCount(count);
+    }
+  }, [user, statsReloadKey]);
 
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
@@ -70,6 +96,32 @@ export default function App() {
 
       {/* Main Content Area Container */}
       <main className="flex-1 min-w-0 p-6 md:p-8 lg:p-10 relative z-10 overflow-y-auto max-h-screen">
+        
+        {/* Real-time small alerts header */}
+        <div className="flex justify-end mb-4 relative z-50">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="p-2 bg-zinc-900 hover:bg-zinc-800 border border-white/5 rounded-full relative cursor-pointer text-zinc-400 hover:text-white transition-all"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-indigo-500 text-white font-mono text-[9px] font-extrabold h-4.5 w-4.5 rounded-full flex items-center justify-center border border-[#0a0a0a]">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Floating drawer position */}
+          {showNotifications && (
+            <div className="absolute right-0 top-11 z-50 animate-fade-in shadow-2xl">
+              <NotificationCenter 
+                user={user} 
+                onRefreshNotificationCount={forceReloadStats} 
+              />
+            </div>
+          )}
+        </div>
+
         <div className="max-w-7xl mx-auto">
           {activeTab === "dashboard" && (
             <div key={`${statsReloadKey}_dash`}>
@@ -82,6 +134,66 @@ export default function App() {
 
           {activeTab === "resume" && (
             <ResumeView 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "ats-checker" && (
+            <AtsChecker 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "resume-builder" && (
+            <ResumeBuilder 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "portfolio-projects" && (
+            <PortfolioProjects 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "career-coach" && (
+            <CareerCoach 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "learning-roadmap" && (
+            <LearningRoadmap 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "chatbot" && (
+            <CareerChatbot user={user} />
+          )}
+
+          {activeTab === "voice-interview" && (
+            <VoiceInterview 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "interview-analytics" && (
+            <InterviewAnalyticsView 
+              user={user} 
+              onRefreshDashboard={forceReloadStats} 
+            />
+          )}
+
+          {activeTab === "admin-panel" && (
+            <AdminPanel 
               user={user} 
               onRefreshDashboard={forceReloadStats} 
             />
@@ -116,3 +228,4 @@ export default function App() {
     </div>
   );
 }
+

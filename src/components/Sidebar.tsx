@@ -7,7 +7,21 @@ import { LayoutDashboard, FileText, Briefcase, Mic, User as UserIcon, LogOut, Me
 import { User } from "../types";
 import { useState } from "react";
 
-export type SidebarTab = "dashboard" | "resume" | "job-match" | "interview" | "profile";
+export type SidebarTab = 
+  | "dashboard" 
+  | "resume" 
+  | "job-match" 
+  | "interview" 
+  | "profile"
+  | "ats-checker"
+  | "resume-builder"
+  | "career-coach"
+  | "learning-roadmap"
+  | "interview-analytics"
+  | "voice-interview"
+  | "chatbot"
+  | "portfolio-projects"
+  | "admin-panel";
 
 interface SidebarProps {
   user: User;
@@ -19,12 +33,33 @@ interface SidebarProps {
 export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const navItems = [
+  // Categorized sidebars Navigation list
+  const coreNavItems = [
     { id: "dashboard" as SidebarTab, label: "Core Dashboard", icon: LayoutDashboard },
+    { id: "profile" as SidebarTab, label: "Profile Settings", icon: UserIcon },
+  ];
+
+  const resumeNavItems = [
     { id: "resume" as SidebarTab, label: "Resume Auditor", icon: FileText },
-    { id: "job-match" as SidebarTab, label: "Job Fit Alignment", icon: Briefcase },
-    { id: "interview" as SidebarTab, label: "Simulated Interview", icon: Mic },
-    { id: "profile" as SidebarTab, label: "Profile Tracker", icon: UserIcon },
+    { id: "ats-checker" as SidebarTab, label: "SaaS ATS Checker", icon: Sparkles },
+    { id: "resume-builder" as SidebarTab, label: "AI Resume Builder", icon: FileText },
+    { id: "portfolio-projects" as SidebarTab, label: "Portfolio Architect", icon: FileText },
+  ];
+
+  const careerCoachNavItems = [
+    { id: "career-coach" as SidebarTab, label: "AI Career Coach", icon: Sparkles },
+    { id: "learning-roadmap" as SidebarTab, label: "Study Roadmaps", icon: Briefcase },
+    { id: "chatbot" as SidebarTab, label: "Career Assistant", icon: Sparkles },
+  ];
+
+  const interviewNavItems = [
+    { id: "interview" as SidebarTab, label: "Smart Interview", icon: Mic },
+    { id: "voice-interview" as SidebarTab, label: "Voice Mock Setup", icon: Mic },
+    { id: "interview-analytics" as SidebarTab, label: "Interview Analytics", icon: LayoutDashboard },
+  ];
+
+  const adminNavItems = [
+    { id: "admin-panel" as SidebarTab, label: "Admin panel", icon: LayoutDashboard },
   ];
 
   const toggleSidebar = () => setIsOpen(!isOpen);
@@ -42,7 +77,7 @@ export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: Side
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <span className="font-display font-bold text-sm tracking-tight text-white">TalentAI</span>
+          <span className="font-display font-bold text-sm tracking-tight text-white">TalentAI Premium</span>
         </div>
         <button
           onClick={toggleSidebar}
@@ -67,40 +102,156 @@ export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: Side
         ${isOpen ? "translate-x-0" : "-translate-x-full"}
       `}>
         {/* Branding Area */}
-        <div className="p-6 border-b border-white/5 flex flex-col gap-1.5">
+        <div className="p-6 border-b border-white/5 flex flex-col gap-1.5 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white animate-spin-slow" />
             </div>
             <div>
-              <span className="font-display font-extrabold text-lg tracking-tight text-white block">TalentAI</span>
-              <span className="text-slate-400 font-mono text-[9px] block uppercase font-bold leading-none">Career Copilot</span>
+              <span className="font-display font-extrabold text-sm tracking-tight text-white block">TalentAI Premium</span>
+              <span className="text-emerald-400 font-mono text-[8px] block uppercase font-bold leading-none">Enterprise SaaS v3.0</span>
             </div>
           </div>
         </div>
 
         {/* Navigation Content */}
-        <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const IsActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleSelect(item.id)}
-                className={`
-                  w-full h-11 px-3.5 rounded-lg flex items-center gap-3 font-display font-semibold text-xs tracking-wide transition-all cursor-pointer
-                  ${IsActive 
-                    ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
-                    : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
-                  }
-                `}
-              >
-                <Icon className={`w-4 h-4 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
+        <nav className="flex-1 px-4 py-4 space-y-4 overflow-y-auto text-left">
+          
+          {/* Core Panel */}
+          <div>
+            <span className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest pl-3 block mb-2">Systems Controls</span>
+            <div className="space-y-0.5">
+              {coreNavItems.map((item) => {
+                const Icon = item.icon;
+                const IsActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSelect(item.id)}
+                    className={`
+                      w-full h-9 px-3 rounded-lg flex items-center gap-2.5 font-display font-bold text-xs tracking-wide transition-all cursor-pointer
+                      ${IsActive 
+                        ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
+                        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                      }
+                    `}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Resume & Portfolio Panel */}
+          <div>
+            <span className="text-[9px] font-mono font-bold text-indigo-400/90 uppercase tracking-widest pl-3 block mb-2">Optimisation Suite</span>
+            <div className="space-y-0.5">
+              {resumeNavItems.map((item) => {
+                const Icon = item.icon;
+                const IsActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSelect(item.id)}
+                    className={`
+                      w-full h-9 px-3 rounded-lg flex items-center gap-2.5 font-display font-bold text-xs tracking-wide transition-all cursor-pointer
+                      ${IsActive 
+                        ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
+                        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                      }
+                    `}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Training & Advice */}
+          <div>
+            <span className="text-[9px] font-mono font-bold text-teal-400/95 uppercase tracking-widest pl-3 block mb-2">Career Mentorship</span>
+            <div className="space-y-0.5">
+              {careerCoachNavItems.map((item) => {
+                const Icon = item.icon;
+                const IsActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSelect(item.id)}
+                    className={`
+                      w-full h-9 px-3 rounded-lg flex items-center gap-2.5 font-display font-bold text-xs tracking-wide transition-all cursor-pointer
+                      ${IsActive 
+                        ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
+                        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                      }
+                    `}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Simulated Audits */}
+          <div>
+            <span className="text-[9px] font-mono font-bold text-[#e1b73c] uppercase tracking-widest pl-3 block mb-2">Simulated Audits</span>
+            <div className="space-y-0.5">
+              {interviewNavItems.map((item) => {
+                const Icon = item.icon;
+                const IsActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSelect(item.id)}
+                    className={`
+                      w-full h-9 px-3 rounded-lg flex items-center gap-2.5 font-display font-bold text-xs tracking-wide transition-all cursor-pointer
+                      ${IsActive 
+                        ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
+                        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                      }
+                    `}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Admin panel */}
+          <div>
+            <span className="text-[9px] font-mono font-bold text-red-400/90 uppercase tracking-widest pl-3 block mb-2">Internal Admin</span>
+            <div className="space-y-0.5">
+              {adminNavItems.map((item) => {
+                const Icon = item.icon;
+                const IsActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSelect(item.id)}
+                    className={`
+                      w-full h-9 px-3 rounded-lg flex items-center gap-2.5 font-display font-bold text-xs tracking-wide transition-all cursor-pointer
+                      ${IsActive 
+                        ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
+                        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                      }
+                    `}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
         </nav>
 
         {/* User Badge Profile + Quit Action */}
