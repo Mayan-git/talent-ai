@@ -77,7 +77,7 @@ export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: Side
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <span className="font-display font-bold text-sm tracking-tight text-white">TalentAI Premium</span>
+          <span className="font-display font-bold text-sm tracking-tight text-white">HireWise AI</span>
         </div>
         <button
           onClick={toggleSidebar}
@@ -108,8 +108,8 @@ export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: Side
               <Sparkles className="w-4 h-4 text-white animate-spin-slow" />
             </div>
             <div>
-              <span className="font-display font-extrabold text-sm tracking-tight text-white block">TalentAI Premium</span>
-              <span className="text-emerald-400 font-mono text-[8px] block uppercase font-bold leading-none">Enterprise SaaS v3.0</span>
+              <span className="font-display font-extrabold text-sm tracking-tight text-white block">HireWise AI</span>
+              <span className="text-indigo-400 font-mono text-[8px] block uppercase font-bold leading-none">Enterprise SaaS v3.0</span>
             </div>
           </div>
         </div>
@@ -226,31 +226,33 @@ export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: Side
           </div>
 
           {/* Admin panel */}
-          <div>
-            <span className="text-[9px] font-mono font-bold text-red-400/90 uppercase tracking-widest pl-3 block mb-2">Internal Admin</span>
-            <div className="space-y-0.5">
-              {adminNavItems.map((item) => {
-                const Icon = item.icon;
-                const IsActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleSelect(item.id)}
-                    className={`
-                      w-full h-9 px-3 rounded-lg flex items-center gap-2.5 font-display font-bold text-xs tracking-wide transition-all cursor-pointer
-                      ${IsActive 
-                        ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
-                        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
-                      }
-                    `}
-                  >
-                    <Icon className={`w-3.5 h-3.5 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
+          {user.role === "admin" && (
+            <div>
+              <span className="text-[9px] font-mono font-bold text-red-400/90 uppercase tracking-widest pl-3 block mb-2">Internal Admin</span>
+              <div className="space-y-0.5">
+                {adminNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const IsActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelect(item.id)}
+                      className={`
+                        w-full h-9 px-3 rounded-lg flex items-center gap-2.5 font-display font-bold text-xs tracking-wide transition-all cursor-pointer
+                        ${IsActive 
+                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 shadow-sm" 
+                          : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                        }
+                      `}
+                    >
+                      <Icon className={`w-3.5 h-3.5 ${IsActive ? "text-indigo-400" : "text-slate-400"}`} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
         </nav>
 

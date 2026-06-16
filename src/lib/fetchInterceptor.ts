@@ -77,5 +77,5 @@ export function setupFetchInterceptor() {
     }
   }
 
-  console.log("🚀 TalentAI Client-Side Offline Failover Engine Active & Listening.");
+  console.log("🚀 HireWise AI Client-Side Offline Failover Engine Active & Listening.");
 }

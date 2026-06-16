@@ -12,6 +12,7 @@ import ResumeView from "./components/ResumeView";
 import JobMatcher from "./components/JobMatcher";
 import InterviewView from "./components/InterviewView";
 import ProfileView from "./components/ProfileView";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // SaaS Premium Views
 import AtsChecker from "./components/AtsChecker";
@@ -25,7 +26,7 @@ import PortfolioProjects from "./components/PortfolioProjects";
 import AdminPanel from "./components/AdminPanel";
 import NotificationCenter from "./components/NotificationCenter";
 
-import { Bell } from "lucide-react";
+import { Bell, ShieldAlert } from "lucide-react";
 import { saasStore } from "./lib/saasStore";
 
 export default function App() {
@@ -123,105 +124,117 @@ export default function App() {
         </div>
 
         <div className="max-w-7xl mx-auto">
-          {activeTab === "dashboard" && (
-            <div key={`${statsReloadKey}_dash`}>
-              <DashboardView 
+          <ErrorBoundary key={activeTab} name={activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("-", " ")}>
+            {activeTab === "dashboard" && (
+              <div key={`${statsReloadKey}_dash`}>
+                <DashboardView 
+                  user={user} 
+                  onNavigate={(tab) => setActiveTab(tab)} 
+                />
+              </div>
+            )}
+
+            {activeTab === "resume" && (
+              <ResumeView 
                 user={user} 
-                onNavigate={(tab) => setActiveTab(tab)} 
+                onRefreshDashboard={forceReloadStats} 
               />
-            </div>
-          )}
+            )}
 
-          {activeTab === "resume" && (
-            <ResumeView 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "ats-checker" && (
+              <AtsChecker 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "ats-checker" && (
-            <AtsChecker 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "resume-builder" && (
+              <ResumeBuilder 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "resume-builder" && (
-            <ResumeBuilder 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "portfolio-projects" && (
+              <PortfolioProjects 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "portfolio-projects" && (
-            <PortfolioProjects 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "career-coach" && (
+              <CareerCoach 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "career-coach" && (
-            <CareerCoach 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "learning-roadmap" && (
+              <LearningRoadmap 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "learning-roadmap" && (
-            <LearningRoadmap 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "chatbot" && (
+              <CareerChatbot user={user} />
+            )}
 
-          {activeTab === "chatbot" && (
-            <CareerChatbot user={user} />
-          )}
+            {activeTab === "voice-interview" && (
+              <VoiceInterview 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "voice-interview" && (
-            <VoiceInterview 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "interview-analytics" && (
+              <InterviewAnalyticsView 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "interview-analytics" && (
-            <InterviewAnalyticsView 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "admin-panel" && (
+              user?.role === "admin" ? (
+                <AdminPanel 
+                  user={user} 
+                  onRefreshDashboard={forceReloadStats} 
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                  <ShieldAlert className="w-12 h-12 text-red-500 animate-bounce" />
+                  <h3 className="font-display font-black text-xl text-white">Security Violation</h3>
+                  <p className="text-zinc-500 text-xs max-w-sm leading-relaxed">
+                    Access Denied. You do not have permission to view this zone. This operation has been logged.
+                  </p>
+                </div>
+              )
+            )}
 
-          {activeTab === "admin-panel" && (
-            <AdminPanel 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "job-match" && (
+              <JobMatcher 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "job-match" && (
-            <JobMatcher 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
+            {activeTab === "interview" && (
+              <InterviewView 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
 
-          {activeTab === "interview" && (
-            <InterviewView 
-              user={user} 
-              onRefreshDashboard={forceReloadStats} 
-            />
-          )}
-
-          {activeTab === "profile" && (
-            <ProfileView 
-              user={user} 
-              onUpdateUser={(updated) => {
-                setUser(updated);
-                localStorage.setItem("talentai_session_user", JSON.stringify(updated));
-              }} 
-            />
-          )}
+            {activeTab === "profile" && (
+              <ProfileView 
+                user={user} 
+                onUpdateUser={(updated) => {
+                  setUser(updated);
+                  localStorage.setItem("talentai_session_user", JSON.stringify(updated));
+                }} 
+              />
+            )}
+          </ErrorBoundary>
         </div>
       </main>
 

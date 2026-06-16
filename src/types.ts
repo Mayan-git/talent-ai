@@ -13,6 +13,7 @@ export interface User {
   title?: string;
   bio?: string;
   skills?: string[];
+  role?: "admin" | "user";
   experienceLevel?: "Junior" | "Mid-level" | "Senior" | "Executive";
 }
 

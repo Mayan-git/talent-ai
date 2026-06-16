@@ -111,6 +111,10 @@ export default function ResumeView({ user, onRefreshDashboard }: ResumeViewProps
   const triggerAnalysis = async (fileLabel: string, payload: string, isPdf: boolean) => {
     setUploadProgress(true);
     setFeedbackError(null);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout safety boundary
+    
     try {
       const response = await fetch("/api/resume/analyze", {
         method: "POST",
@@ -121,7 +125,10 @@ export default function ResumeView({ user, onRefreshDashboard }: ResumeViewProps
           base64Data: payload,
           isPdf,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       const data = await response.json();
       if (!response.ok) {
@@ -136,7 +143,30 @@ export default function ResumeView({ user, onRefreshDashboard }: ResumeViewProps
         if (onRefreshDashboard) onRefreshDashboard();
       }
     } catch (err: any) {
-      setFeedbackError(err.message || "An unexpected error occurred during analysis.");
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        setFeedbackError("Request timeout. The server is under high load. We have successfully triggered the client-side failover engine to analyze and securely save your CV locally!");
+        
+        // Give a tiny delayed moment for client-side db storage to synchronize, then reload history
+        setTimeout(async () => {
+          try {
+            const res = await fetch(`/api/resume/history/${user.id}`);
+            if (res.ok) {
+              const data = await res.json();
+              setHistory(data.resumes || []);
+              if (data.resumes && data.resumes.length > 0) {
+                setSelectedResume(data.resumes[0]);
+                setShowUploader(false);
+                setRawText("");
+              }
+            }
+          } catch (historyErr) {
+            console.error("Failed to refresh resume list:", historyErr);
+          }
+        }, 1200);
+      } else {
+        setFeedbackError(err.message || "An unexpected error occurred during analysis.");
+      }
     } finally {
       setUploadProgress(false);
     }

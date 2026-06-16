@@ -1,6 +1,10 @@
 {
-  "name": "AI Interview Prep & Resume Analyzer",
-  "description": "A comprehensive platform with AI-driven resume scoring, job description matching, skill gap discovery, and interactive simulated interviews with constructive feedback.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "HireWise AI",
+  "description": "AI-powered platform for resume analysis, ATS scoring, mock interviews, skill gap analysis, and career growth.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -12,6 +12,7 @@ import {
   matchJobDescription,
   generateInterviewQuestions,
   evaluateInterviewAnswers,
+  evaluateVoiceSpeechSample,
 } from "./server/gemini";
 import { InterviewStatus } from "./src/types";
 
@@ -74,6 +75,7 @@ async function startServer() {
       }
 
       // Simple credential verification for developer ease & UX
+      dbStore.addLog(`User login successful: ${user.name} (${user.email}) as role ${user.role || 'user'}`, "success");
       res.status(200).json({ user });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -285,6 +287,21 @@ async function startServer() {
     }
   });
 
+  app.post("/api/voice/evaluate", async (req, res) => {
+    try {
+      const { questionText, answerText, role, difficulty } = req.body;
+      if (!questionText || !answerText || !role || !difficulty) {
+        return res.status(400).json({ error: "Missing required speech parameters." });
+      }
+
+      const evaluation = await evaluateVoiceSpeechSample(questionText, answerText, role, difficulty);
+      res.status(200).json(evaluation);
+    } catch (err: any) {
+      console.error("error in Voice evaluation endpoint:", err);
+      res.status(500).json({ error: err.message || "Failed to analyze speech metrics." });
+    }
+  });
+
   app.get("/api/interview/history/:userId", (req, res) => {
     try {
       const sessions = dbStore.getInterviews(req.params.userId);
@@ -394,12 +411,215 @@ async function startServer() {
   });
 
   // ==========================================
+  // SYSTEM ADMINISTRATION PANEL ENDPOINTS
+  // ==========================================
+
+  // Middleware to log API request durations inside DB Telemetry schema
+  app.use("/api", (req, res, next) => {
+    const start = Date.now();
+    res.on("finish", () => {
+      const duration = Date.now() - start;
+      if (!req.originalUrl.includes("/api/admin")) {
+        try {
+          dbStore.addApiTelemetry(req.originalUrl.split("?")[0], duration, res.statusCode);
+        } catch (_) {}
+      }
+    });
+    next();
+  });
+
+  // Admin Verification Helper
+  function verifyAdmin(req: any, res: any, next: any) {
+    const adminHeaderId = req.headers["x-admin-userid"];
+    if (!adminHeaderId) {
+      return res.status(401).json({ error: "Access denied. Administrator identity not verified." });
+    }
+    const data = dbStore.get();
+    const adminUser = data.users.find(u => u.id === adminHeaderId);
+    if (!adminUser || adminUser.role !== "admin") {
+      return res.status(403).json({ error: "Forbidden. Access restricted to System Administrators." });
+    }
+    next();
+  }
+
+  // Get Admin Dashboard Cumulative Stats
+  app.get("/api/admin/stats", verifyAdmin, (req, res) => {
+    try {
+      const data = dbStore.get();
+      
+      // Calculate score aggregates
+      const totalResumes = data.resumes.length;
+      const totalInterviews = data.interviews.length;
+      const completedInterviews = data.interviews.filter(i => i.status === InterviewStatus.COMPLETED || i.overallScore > 0);
+
+      const avgResumeScore = totalResumes > 0 
+        ? Math.round(data.resumes.reduce((sum, r) => sum + r.score, 0) / totalResumes)
+        : 0;
+      
+      const avgInterviewScore = completedInterviews.length > 0
+        ? Math.round(completedInterviews.reduce((sum, i) => sum + i.overallScore, 0) / completedInterviews.length)
+        : 0;
+
+      // Group users by registration date over last 30 days
+      const userGrowth: Record<string, number> = {};
+      const resumeScoreBrackets = { Excellent: 0, High: 0, Basic: 0 };
+
+      data.users.forEach(u => {
+        const dateStr = u.createdAt ? u.createdAt.split("T")[0] : new Date().toISOString().split("T")[0];
+        userGrowth[dateStr] = (userGrowth[dateStr] || 0) + 1;
+      });
+
+      data.resumes.forEach(r => {
+        if (r.score >= 85) resumeScoreBrackets.Excellent++;
+        else if (r.score >= 70) resumeScoreBrackets.High++;
+        else resumeScoreBrackets.Basic++;
+      });
+
+      // API Telemetry routing split
+      const routeFrequency: Record<string, { count: number; totalDuration: number; errors: number }> = {};
+      data.apiTelemetry.forEach(t => {
+        if (!routeFrequency[t.route]) {
+          routeFrequency[t.route] = { count: 0, totalDuration: 0, errors: 0 };
+        }
+        routeFrequency[t.route].count++;
+        routeFrequency[t.route].totalDuration += t.durationMs;
+        if (t.status >= 400) {
+          routeFrequency[t.route].errors++;
+        }
+      });
+
+      const apiStats = Object.entries(routeFrequency).map(([route, metrics]) => ({
+        route,
+        requests: metrics.count,
+        avgLatencyMs: Math.round(metrics.totalDuration / metrics.count),
+        errorRatePercent: Math.round((metrics.errors / metrics.count) * 100),
+      }));
+
+      // Get last 150 logs sorted newest first
+      const sortedLogs = [...data.logs].reverse().slice(0, 150);
+
+      res.status(200).json({
+        cumulative: {
+          totalUsers: data.users.length,
+          totalResumes,
+          totalInterviews,
+          completedInterviewsCount: completedInterviews.length,
+          avgResumeScore,
+          avgInterviewScore,
+          totalApiRequests: data.apiTelemetry.length,
+        },
+        userGrowth: Object.entries(userGrowth).map(([date, count]) => ({ date, count })).sort((a,b) => a.date.localeCompare(b.date)),
+        resumeDist: [
+          { name: "Excellent (85-100)", value: resumeScoreBrackets.Excellent },
+          { name: "High Potential (70-84)", value: resumeScoreBrackets.High },
+          { name: "Needs Auditing (<70)", value: resumeScoreBrackets.Basic },
+        ],
+        apiStats,
+        logs: sortedLogs,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get All Registered Users List
+  app.get("/api/admin/users", verifyAdmin, (req, res) => {
+    try {
+      const data = dbStore.get();
+      // Enrich user object with counts of their resumes & interviews
+      const enrichedUsers = data.users.map(u => {
+        const userResumes = data.resumes.filter(r => r.userId === u.id);
+        const userInterviews = data.interviews.filter(i => i.userId === u.id);
+        const completed = userInterviews.filter(i => i.status === InterviewStatus.COMPLETED || i.overallScore > 0);
+        const maxScore = completed.length > 0 ? Math.max(...completed.map(i => i.overallScore)) : 0;
+
+        return {
+          ...u,
+          resumesAnalyzed: userResumes.length,
+          interviewsAttempted: userInterviews.length,
+          bestInterviewScore: maxScore,
+        };
+      });
+      res.status(200).json({ users: enrichedUsers });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Modify User Parameters
+  app.post("/api/admin/users/update", verifyAdmin, (req, res) => {
+    try {
+      const { targetUserId, updates } = req.body;
+      if (!targetUserId || !updates) {
+        return res.status(400).json({ error: "Missing targetUserId or edits updates." });
+      }
+      const updated = dbStore.updateUser(targetUserId, updates);
+      res.status(200).json({ user: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Hard Delete User Account
+  app.post("/api/admin/users/delete", verifyAdmin, (req, res) => {
+    try {
+      const { targetUserId } = req.body;
+      if (!targetUserId) {
+        return res.status(400).json({ error: "targetUserId parameter required." });
+      }
+      if (targetUserId === "admin_default" || targetUserId === req.headers["x-admin-userid"]) {
+        return res.status(400).json({ error: "Root administrators cannot delete themselves." });
+      }
+      const success = dbStore.deleteUser(targetUserId);
+      if (!success) {
+        return res.status(404).json({ error: "Candidate profile not found." });
+      }
+      res.status(200).json({ success: true, message: "Account scrubbed successfully." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Clear system-wide telemetry activity logs
+  app.post("/api/admin/logs/clear", verifyAdmin, (req, res) => {
+    try {
+      const data = dbStore.get();
+      data.logs = [{ id: "log_clear_" + Date.now().toString(36), msg: "System administrator cleared all logs feeds.", time: new Date().toISOString(), type: "warn" }];
+      dbStore.save(data);
+      res.status(200).json({ success: true, logs: data.logs });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin manually emit user log event trace
+  app.post("/api/admin/logs/emit", verifyAdmin, (req, res) => {
+    try {
+      const { msg, type } = req.body;
+      if (!msg) return res.status(400).json({ error: "Message string required." });
+      const addedLog = dbStore.addLog(msg, type || "info");
+      res.status(200).json({ log: addedLog });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
   // VITE DEV / PRODUCTION MIDDLEWARE
   // ==========================================
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        host: true,
+        strictPort: true,
+        hmr: false,
+        watch: {
+          usePolling: true,
+          interval: 100,
+        },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
