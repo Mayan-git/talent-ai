@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { LayoutDashboard, FileText, Briefcase, Mic, User as UserIcon, LogOut, Menu, X, Sparkles } from "lucide-react";
+import { LayoutDashboard, FileText, Briefcase, Mic, User as UserIcon, LogOut, Menu, X, Sparkles, CreditCard, Linkedin } from "lucide-react";
 import { User } from "../types";
 import { useState } from "react";
 
@@ -21,6 +21,9 @@ export type SidebarTab =
   | "voice-interview"
   | "chatbot"
   | "portfolio-projects"
+  | "cover-letter"
+  | "linkedin-analyzer"
+  | "pricing"
   | "admin-panel";
 
 interface SidebarProps {
@@ -36,6 +39,7 @@ export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: Side
   // Categorized sidebars Navigation list
   const coreNavItems = [
     { id: "dashboard" as SidebarTab, label: "Core Dashboard", icon: LayoutDashboard },
+    { id: "pricing" as SidebarTab, label: "Subscription Plans", icon: CreditCard },
     { id: "profile" as SidebarTab, label: "Profile Settings", icon: UserIcon },
   ];
 
@@ -43,6 +47,8 @@ export default function Sidebar({ user, activeTab, onSelectTab, onLogout }: Side
     { id: "resume" as SidebarTab, label: "Resume Auditor", icon: FileText },
     { id: "ats-checker" as SidebarTab, label: "SaaS ATS Checker", icon: Sparkles },
     { id: "resume-builder" as SidebarTab, label: "AI Resume Builder", icon: FileText },
+    { id: "cover-letter" as SidebarTab, label: "AI Cover Letter", icon: FileText },
+    { id: "linkedin-analyzer" as SidebarTab, label: "LinkedIn Optimizer", icon: Linkedin },
     { id: "portfolio-projects" as SidebarTab, label: "Portfolio Architect", icon: FileText },
   ];
 

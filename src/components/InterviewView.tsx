@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { 
-  Mic, MicOff, MessageSquare, Play, Sparkles, Award, ArrowRight, CheckCircle2, ChevronRight, RefreshCw, AlertCircle, Headphones, Volume2, HelpCircle 
+  Mic, MicOff, MessageSquare, Play, Sparkles, Award, ArrowRight, CheckCircle2, ChevronRight, RefreshCw, AlertCircle, Headphones, Volume2, HelpCircle, Download, FileText
 } from "lucide-react";
 import { User, InterviewQuestion, UserAnswer, InterviewSession, InterviewStatus } from "../types";
 import { motion, AnimatePresence } from "motion/react";

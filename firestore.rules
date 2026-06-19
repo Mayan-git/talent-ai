@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper to check if user is signed in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper to check if user is the owner of the document or data
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || (isSignedIn() && request.auth.token.email_verified == true);
+    }
+
+    // atsHistory collection
+    match /atsHistory/{recordId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // interviews collection
+    match /interviews/{sessionId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // jobMatches collection
+    match /jobMatches/{matchId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+  }
+}

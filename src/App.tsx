@@ -25,9 +25,13 @@ import CareerChatbot from "./components/CareerChatbot";
 import PortfolioProjects from "./components/PortfolioProjects";
 import AdminPanel from "./components/AdminPanel";
 import NotificationCenter from "./components/NotificationCenter";
+import CoverLetter from "./components/CoverLetter";
+import LinkedInAnalyzer from "./components/LinkedInAnalyzer";
+import PricingTab from "./components/PricingTab";
 
 import { Bell, ShieldAlert } from "lucide-react";
 import { saasStore } from "./lib/saasStore";
+import { auth, onAuthStateChanged, signOut } from "./lib/firebase";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -35,21 +39,70 @@ export default function App() {
   const [statsReloadKey, setStatsReloadKey] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
 
-  // Read session cache to retain login state on browser refresher
+  // Clear toast after 5 seconds
   useEffect(() => {
-    const cached = localStorage.getItem("talentai_session_user");
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (parsed && parsed.id) {
-          setUser(parsed);
-        }
-      } catch (err) {
-        console.error("Session read mismatch:", err);
-      }
+    if (welcomeToast) {
+      const timer = setTimeout(() => {
+        setWelcomeToast(null);
+      }, 5000);
+      return () => clearTimeout(timer);
     }
-  }, []);
+  }, [welcomeToast]);
+
+  // Synchronize Cloud Firebase Auth changes with our backend session state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const res = await fetch("/api/auth/sync", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              id: firebaseUser.uid,
+              email: firebaseUser.email,
+              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Aspirant Member",
+              photoURL: firebaseUser.photoURL || "",
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.user) {
+              setUser(data.user);
+              localStorage.setItem("talentai_session_user", JSON.stringify(data.user));
+              return;
+            }
+          }
+        } catch (e) {
+          console.error("Failed to sync authenticated profile with backend:", e);
+        }
+
+        // Fallback profile representation
+        const fbUserObj: User = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || "",
+          name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Aspirant Member",
+          photoURL: firebaseUser.photoURL || "",
+          createdAt: new Date().toISOString(),
+          skills: [],
+          experienceLevel: "Junior",
+          title: "Developer Aspirant",
+          bio: "Developing my profile to land my dream job.",
+          plan: "Free",
+        };
+        setUser(fbUserObj);
+        localStorage.setItem("talentai_session_user", JSON.stringify(fbUserObj));
+      } else {
+        setUser(null);
+        localStorage.removeItem("talentai_session_user");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [statsReloadKey]);
 
   // Update notification count
   useEffect(() => {
@@ -60,13 +113,22 @@ export default function App() {
     }
   }, [user, statsReloadKey]);
 
-  const handleLoginSuccess = (loggedInUser: User) => {
+  const handleLoginSuccess = (loggedInUser: User, isNewUser?: boolean) => {
     setUser(loggedInUser);
     localStorage.setItem("talentai_session_user", JSON.stringify(loggedInUser));
     setActiveTab("dashboard");
+    if (isNewUser) {
+      const firstName = loggedInUser.name.split(" ")[0] || "Aspirant";
+      setWelcomeToast(`Welcome to HireWise AI, ${firstName}! 🎉`);
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error("Firebase Auth sign out failure:", e);
+    }
     setUser(null);
     localStorage.removeItem("talentai_session_user");
   };
@@ -234,9 +296,42 @@ export default function App() {
                 }} 
               />
             )}
+
+            {activeTab === "cover-letter" && (
+              <CoverLetter 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
+
+            {activeTab === "linkedin-analyzer" && (
+              <LinkedInAnalyzer 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
+
+            {activeTab === "pricing" && (
+              <PricingTab 
+                user={user} 
+                onRefreshDashboard={forceReloadStats} 
+              />
+            )}
           </ErrorBoundary>
         </div>
       </main>
+
+      {/* Welcome custom toast */}
+      {welcomeToast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-zinc-950/95 border border-indigo-500/20 text-white rounded-xl shadow-2xl p-4 flex items-center space-x-3 max-w-sm backdrop-blur-xl">
+          <span className="text-xl">🎉</span>
+          <div className="flex-1">
+            <p className="text-xs font-mono font-bold text-indigo-400">Notification</p>
+            <p className="text-xs text-zinc-350 leading-snug">{welcomeToast}</p>
+          </div>
+          <button onClick={() => setWelcomeToast(null)} className="text-zinc-400 hover:text-white text-xs px-1 cursor-pointer">×</button>
+        </div>
+      )}
 
     </div>
   );

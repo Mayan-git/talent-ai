@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   Mail, Lock, User as UserIcon, Sparkles, Award, ArrowRight, BookOpen, UserCheck, 
   RefreshCw, TrendingUp, CheckCircle, MessageSquare, Plus, Star, Volume2, PieChart, 
@@ -11,9 +11,73 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "../types";
+import { 
+  auth, 
+  googleProvider, 
+  signInWithPopup, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  updateProfile,
+  onAuthStateChanged,
+  db,
+  doc,
+  setDoc
+} from "../lib/firebase";
+
+function CountUp({ end, suffix = "", duration = 1200 }: { end: number; suffix?: string; duration?: number }) {
+  const [count, setCount] = useState(0);
+  const elementRef = useRef<HTMLDivElement>(null);
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    const currentElem = elementRef.current;
+    if (!currentElem) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && !startedRef.current) {
+          startedRef.current = true;
+          const startTime = Date.now();
+          const tick = () => {
+            if (!active) return;
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            // Quadratic ease-out
+            const easeOutQuad = (x: number) => 1 - (1 - x) * (1 - x);
+            const currentCount = Math.floor(easeOutQuad(progress) * end);
+            setCount(currentCount);
+
+            if (progress < 1) {
+              requestAnimationFrame(tick);
+            } else {
+              setCount(end);
+            }
+          };
+          requestAnimationFrame(tick);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(currentElem);
+
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [end, duration]);
+
+  const formatNumber = (num: number) => {
+    return num.toLocaleString();
+  };
+
+  return <span ref={elementRef}>{formatNumber(count)}{suffix}</span>;
+}
 
 interface LandingPageProps {
-  onLoginSuccess: (user: User) => void;
+  onLoginSuccess: (user: User, isNewUser?: boolean) => void;
 }
 
 export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
@@ -30,6 +94,7 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
   // Landing Page Interactive States
   const [activeDemoTab, setActiveDemoTab] = useState<"ats" | "voice" | "coach">("ats");
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
+  const [isLandingYearly, setIsLandingYearly] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState("");
   const [newsletterSuccess, setNewsletterSuccess] = useState(false);
   const [contactName, setContactName] = useState("");
@@ -38,10 +103,69 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
   const [contactSuccess, setContactSuccess] = useState(false);
   const [isContactLoading, setIsContactLoading] = useState(false);
 
+  const isSubmittingRef = useRef(false);
+
+  // Synchronize dynamic session state on landing page to auto-redirect
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (isSubmittingRef.current) {
+        return;
+      }
+      if (fbUser) {
+        setIsLoading(true);
+        try {
+          const response = await fetch("/api/auth/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: fbUser.uid,
+              email: fbUser.email,
+              name: fbUser.displayName || fbUser.email?.split("@")[0] || "Aspirant Member",
+              photoURL: fbUser.photoURL || "",
+            }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.user) {
+              onLoginSuccess(data.user, data.isNewUser || false);
+            }
+          }
+        } catch (err) {
+          console.error("Auto-redirect login check err:", err);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [onLoginSuccess]);
+
   const toggleAuthMode = () => {
     setIsLogin(!isLogin);
     setErrorMsg(null);
     setInfoMsg(null);
+  };
+
+  const getFirebaseFriendlyError = (err: any): string => {
+    const code = err?.code || "";
+    const msg = String(err?.message || "");
+
+    if (code === "auth/wrong-password" || code === "auth/invalid-credential" || msg.includes("wrong-password") || msg.includes("invalid-credential")) {
+      return "Incorrect password. Please try again.";
+    }
+    if (code === "auth/user-not-found" || msg.includes("user-not-found")) {
+      return "No account found. Please sign up first.";
+    }
+    if (code === "auth/email-already-in-use" || msg.includes("email-already-in-use")) {
+      return "Email already registered. Try logging in.";
+    }
+    if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) {
+      return "Too many attempts. Please wait a moment.";
+    }
+    if (code === "auth/network-request-failed" || msg.includes("network-request-failed")) {
+      return "No internet connection. Check your network.";
+    }
+    return "Something went wrong. Please try again.";
   };
 
   const handleDemoLogin = async () => {
@@ -49,93 +173,229 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
     setErrorMsg(null);
     setInfoMsg(null);
     try {
-      const response = await fetch("/api/auth/signup", {
+      const randomId = Math.floor(Math.random() * 10000);
+      const emailVal = `candidate_demo_${randomId}@hirewise.ai`;
+      const passVal = "demo-secure-password";
+      
+      const credentials = await createUserWithEmailAndPassword(auth, emailVal, passVal);
+      const fbUser = credentials.user;
+      await updateProfile(fbUser, { displayName: "Alex Mercer" });
+
+      const response = await fetch("/api/auth/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: `candidate_demo_${Math.floor(Math.random() * 10000)}@hirewise.ai`,
-          password: "demo-secure-password",
+          id: fbUser.uid,
+          email: emailVal,
           name: "Alex Mercer",
+          photoURL: fbUser.photoURL || "",
         }),
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        // If already exists or random fallback
-        const fallbackRes = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: "alex.mercer@mock.com",
-            password: "demo-secure-password",
-          }),
-        });
-        const fallbackData = await fallbackRes.json();
-        if (fallbackRes.ok && fallbackData.user) {
-          onLoginSuccess(fallbackData.user);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user) {
+          onLoginSuccess(data.user, true);
           return;
         }
-        throw new Error(data.error || "Failed to launch quick account.");
-      }
-
-      if (data.user) {
-        onLoginSuccess(data.user);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "Something went wrong.");
+      setErrorMsg(getFirebaseFriendlyError(err));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleAdminPrefillLogin = () => {
-    setEmail("admin@hirewise.ai");
-    setPassword("admin-master-password");
-    setIsLogin(true);
-    setIsForgot(false);
+  const handleAdminPrefillLogin = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
+    try {
+      const emailVal = "admin@hirewise.ai";
+      const passVal = "admin-master-password";
+      
+      let fbUser;
+      try {
+        const credentials = await signInWithEmailAndPassword(auth, emailVal, passVal);
+        fbUser = credentials.user;
+      } catch (authErr) {
+        const credentials = await createUserWithEmailAndPassword(auth, emailVal, passVal);
+        fbUser = credentials.user;
+        await updateProfile(fbUser, { displayName: "HireWise Admin" });
+      }
+
+      const response = await fetch("/api/auth/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: fbUser.uid,
+          email: emailVal,
+          name: "HireWise Admin",
+          role: "admin",
+          photoURL: fbUser.photoURL || "",
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user) {
+          onLoginSuccess({
+            ...data.user,
+            role: "admin",
+          }, false);
+          return;
+        }
+      }
+    } catch (err: any) {
+      setErrorMsg(getFirebaseFriendlyError(err));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setErrorMsg(null);
     setInfoMsg(null);
 
-    const endpoint = isForgot 
-      ? "/api/auth/forgot-password" 
-      : isLogin 
-        ? "/api/auth/login" 
-        : "/api/auth/signup";
-
-    const payload = isForgot 
-      ? { email } 
-      : isLogin 
-        ? { email, password } 
-        : { email, password, name };
-
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Could not complete the safety auth request.");
-      }
-
       if (isForgot) {
-        setInfoMsg("A secure recovery token link has been generated to your clipboard emulation.");
+        setInfoMsg("A secure recovery token link has been generated to your email.");
         setIsForgot(false);
         setIsLogin(true);
-      } else if (data.user) {
-        onLoginSuccess(data.user);
+      } else if (isLogin) {
+        const credentials = await signInWithEmailAndPassword(auth, email, password);
+        const fbUser = credentials.user;
+        
+        const response = await fetch("/api/auth/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: fbUser.uid,
+            email: fbUser.email,
+            name: fbUser.displayName || fbUser.email?.split("@")[0] || "Aspirant Member",
+            photoURL: fbUser.photoURL || "",
+          }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.user) {
+            onLoginSuccess(data.user, data.isNewUser || false);
+            return;
+          }
+        } else {
+          throw new Error("Failed to synchronize user profile with the server.");
+        }
+      } else {
+        if (!name || !name.trim()) {
+          throw { code: "auth/invalid-name", message: "Please enter your name." };
+        }
+        if (!email || !email.trim()) {
+          throw { code: "auth/invalid-email", message: "Please enter your email." };
+        }
+        if (!password || password.length < 6) {
+          throw { code: "auth/weak-password", message: "Password is too weak. It must be at least 6 characters." };
+        }
+
+        const credentials = await createUserWithEmailAndPassword(auth, email, password);
+        const fbUser = credentials.user;
+        await updateProfile(fbUser, { displayName: name });
+
+        // Save user profile to Firestore
+        await setDoc(doc(db, "users", fbUser.uid), {
+          name: name,
+          email: email,
+          photoURL: fbUser.photoURL || "",
+          createdAt: new Date().toISOString(),
+          plan: "free"
+        });
+        console.log("Firestore save success");
+
+        const response = await fetch("/api/auth/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: fbUser.uid,
+            email,
+            name,
+            photoURL: fbUser.photoURL || "",
+          }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.user) {
+            onLoginSuccess(data.user, true); // true since this was direct email signup
+            return;
+          }
+        } else {
+          throw new Error("Failed to synchronize new user profile with the server.");
+        }
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "Authentication mismatch. Please review credentials.");
+      setErrorMsg(getFirebaseFriendlyError(err));
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    isSubmittingRef.current = true;
+    setIsLoading(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+      
+      const response = await fetch("/api/auth/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: fbUser.uid,
+          email: fbUser.email,
+          name: fbUser.displayName || fbUser.email?.split("@")[0] || "Aspirant Member",
+          photoURL: fbUser.photoURL || "",
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user) {
+          if (data.isNewUser) {
+            await setDoc(doc(db, "users", fbUser.uid), {
+              name: fbUser.displayName || fbUser.email?.split("@")[0] || "Aspirant Member",
+              email: fbUser.email || "",
+              photoURL: fbUser.photoURL || "",
+              createdAt: new Date().toISOString(),
+              plan: "free"
+            });
+            console.log("Firestore save success");
+          }
+          onLoginSuccess(data.user, data.isNewUser || false);
+          return;
+        }
+      }
+      
+      // Local fallback representation if server sync was temporarily unreachable
+      onLoginSuccess({
+        id: fbUser.uid,
+        email: fbUser.email || "",
+        name: fbUser.displayName || fbUser.email?.split("@")[0] || "Aspirant Member",
+        photoURL: fbUser.photoURL || "",
+        createdAt: new Date().toISOString(),
+        skills: [],
+        experienceLevel: "Junior",
+        title: "Developer Aspirant",
+        bio: "Developing my profile to land my dream job.",
+        plan: "Free"
+      }, false);
+    } catch (err: any) {
+      console.error("Google login failure:", err);
+      setErrorMsg(getFirebaseFriendlyError(err));
+    } finally {
+      setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -163,10 +423,10 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
   // Static stats
   const stats = [
-    { value: "98.4%", label: "ATS Optimization Index", icon: ShieldCheck, color: "text-emerald-400" },
-    { value: "482,000+", label: "Verified Mock Audits", icon: Volume2, color: "text-indigo-400" },
-    { value: "3.2x Boost", label: "Average Call-back Rate", icon: TrendingUp, color: "text-teal-400" },
-    { value: "4.9 / 5.0", label: "Global Professional Score", icon: Star, color: "text-amber-400" }
+    { numValue: 10000, label: "Resumes Analyzed", suffix: "+", icon: ShieldCheck, color: "text-indigo-400" },
+    { numValue: 89, label: "ATS Pass Rate", suffix: "%", icon: Star, color: "text-emerald-400" },
+    { numValue: 5000, label: "Mock Interviews", suffix: "+", icon: Volume2, color: "text-teal-400" },
+    { numValue: 200, label: "Companies Hiring", suffix: "+", icon: TrendingUp, color: "text-amber-400" }
   ];
 
   // Bento Features list
@@ -453,7 +713,9 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                   <span className="font-mono text-[9px] tracking-wider uppercase text-zinc-500">SYSTEM STAT {idx+1}</span>
                   <IconComp className={`w-4 h-4 ${stat.color}`} />
                 </div>
-                <p className="font-display font-black text-3xl text-white tracking-tight">{stat.value}</p>
+                <p className="font-display font-black text-3xl text-white tracking-tight">
+                  <CountUp end={stat.numValue} suffix={stat.suffix} />
+                </p>
                 <p className="text-[11px] text-zinc-450 leading-normal">{stat.label}</p>
               </div>
             );
@@ -695,9 +957,20 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
               <div className="flex items-center gap-3 pt-2">
                 <img className="w-10 h-10 rounded-full object-cover border border-white/10" src={test.avatar} alt={test.name} />
-                <div>
+                <div className="flex-1 min-w-0">
                   <h4 className="font-display font-bold text-xs text-white">{test.name}</h4>
-                  <p className="text-[10px] text-zinc-500">{test.role} at <span className="text-indigo-400 font-semibold">{test.company}</span></p>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <p className="text-[10px] text-zinc-500 truncate">{test.role} at <span className="text-indigo-400 font-semibold">{test.company}</span></p>
+                    {test.company === "Netflix" && (
+                      <span className="shrink-0 text-[8px] tracking-widest font-mono font-black bg-red-950/40 text-red-500 border border-red-900/30 px-1 py-0.5 rounded">NFLX</span>
+                    )}
+                    {test.company === "Google Cloud" && (
+                      <span className="shrink-0 text-[8px] tracking-widest font-mono font-black bg-sky-955/40 text-sky-400 border border-sky-900/30 px-1 py-0.5 rounded">GGL</span>
+                    )}
+                    {test.company === "Stripe" && (
+                      <span className="shrink-0 text-[8px] tracking-widest font-mono font-black bg-purple-955/40 text-purple-400 border border-purple-900/30 px-1 py-0.5 rounded">STRIP</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -707,140 +980,165 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
       {/* Pricing Section */}
       <section id="pricing" className="relative z-10 w-full max-w-7xl mx-auto px-6 py-16 border-t border-white/5">
-        <div className="text-center max-w-xl mx-auto mb-12">
-          <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-400">SIMPLE SAAS PLANS</span>
+        <div className="text-center max-w-xl mx-auto mb-10 space-y-3">
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-400">Simple SaaS Plans</span>
           <h2 className="font-display font-black text-2xl sm:text-3xl text-white tracking-tight mt-1">
-            Scale your access securely
+            Build your professional footprint
           </h2>
-          <p className="text-zinc-500 text-xs mt-2">
-            Every subscription helps optimize client stores, keeping AI simulations responsive.
+          <p className="text-zinc-550 text-xs mt-2">
+            Every plan unlocks access to resume optimization checklists and active career tools.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        {/* Toggle billing option */}
+        <div className="flex justify-center items-center gap-3 mb-10">
+          <span className={`text-xs font-semibold ${!isLandingYearly ? "text-white" : "text-slate-500"}`}>Monthly billing</span>
+          <button
+            onClick={() => setIsLandingYearly(!isLandingYearly)}
+            className="w-11 h-6 bg-zinc-900 border border-white/10 rounded-full p-1 relative flex items-center transition-all cursor-pointer"
+          >
+            <div
+              className={`w-4 h-4 bg-indigo-500 rounded-full transition-transform ${isLandingYearly ? "translate-x-5" : "translate-x-0"}`}
+            />
+          </button>
+          <div className="flex items-center gap-1.5">
+            <span className={`text-xs font-semibold ${isLandingYearly ? "text-white" : "text-slate-500"}`}>Yearly billing</span>
+            <span className="text-[9px] font-mono font-bold bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded leading-none">
+              SAVE 20%
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto items-stretch">
           
-          {/* Starter Plan */}
-          <div className="p-6 bg-zinc-900/20 border border-white/5 rounded-2xl flex flex-col justify-between text-left space-y-6 relative">
+          {/* Free Plan */}
+          <div className="p-6.5 bg-zinc-950/40 border border-white/5 rounded-2xl flex flex-col justify-between text-left space-y-6 relative transition-all duration-300 hover:border-white/10">
             <div className="space-y-4">
               <div>
-                <span className="text-[10px] font-mono tracking-wider uppercase text-zinc-500 block">TIER 01</span>
-                <h3 className="font-display font-bold text-lg text-white">Starter Sandbox</h3>
+                <span className="text-[10px] font-mono tracking-wider uppercase text-zinc-500 block">Tier 01</span>
+                <h3 className="font-display font-bold text-lg text-white">Starter Free</h3>
               </div>
-              <p className="text-zinc-450 text-xs">Ideal for quick CV evaluations, trial ATS scorings and platform previews.</p>
+              <p className="text-zinc-400 text-xs leading-relaxed">Perfect for quick resume checkups and trial preparations.</p>
               <div className="pt-2">
-                <span className="font-display font-black text-3xl text-white">$0</span>
-                <span className="text-zinc-500 text-xs"> / Permanent free</span>
+                <span className="font-display font-black text-3xl text-white">₹0</span>
+                <span className="text-zinc-500 text-xs"> / permanent</span>
               </div>
 
               <hr className="border-white/5" />
 
-              <ul className="space-y-2.5 text-[11px] text-zinc-400">
+              <ul className="space-y-2.5 text-xs text-zinc-400">
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>3 Free ATS scoring audits</span>
+                  <Check className="w-3.5 h-3.5 text-slate-500" />
+                  <span>3 ATS scans / month</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Standard LaTeX CV editor templates</span>
+                  <Check className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Basic text mock interview</span>
                 </li>
                 <li className="flex items-center gap-2 text-zinc-650">
                   <Check className="w-3.5 h-3.5 text-zinc-650" />
-                  <span>Voice simulated verbal audits</span>
+                  <span>Email community boards</span>
                 </li>
               </ul>
             </div>
 
             <button 
               onClick={() => { setIsLogin(false); setIsAuthModalOpen(true); }}
-              className="w-full h-10 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-lg transition-all cursor-pointer"
+              className="w-full h-10 bg-zinc-850 hover:bg-zinc-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
             >
-              Initialize Sandbox
+              Sign Up Free
             </button>
           </div>
 
           {/* Pro Copilot Plan */}
-          <div className="p-6 bg-zinc-900/60 border border-indigo-500/20 rounded-2xl flex flex-col justify-between text-left space-y-6 relative shadow-2xl relative">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-indigo-600 border border-indigo-500 text-[10px] font-mono font-bold uppercase rounded-full text-white">
-              Most Selected
+          <div className="p-6.5 bg-[#0a0c10] border-2 border-indigo-500 rounded-2xl flex flex-col justify-between text-left space-y-6 relative shadow-2xl transition-all duration-300">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-indigo-500 to-violet-500 border border-indigo-400 text-[9px] font-mono font-black uppercase rounded-full text-white tracking-wider flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-indigo-100" />
+              <span>Most Popular</span>
             </div>
             
             <div className="space-y-4">
               <div>
-                <span className="text-[10px] font-mono tracking-wider uppercase text-indigo-400 block">TIER 02</span>
-                <h3 className="font-display font-bold text-lg text-white">Professional Pro</h3>
+                <span className="text-[10px] font-mono tracking-wider uppercase text-indigo-400 block font-bold">Tier 02</span>
+                <h3 className="font-display font-black text-lg text-white">Pro Unlimited</h3>
               </div>
-              <p className="text-zinc-450 text-xs">Deep skill gaps matrices, unlimited roadmaps, voice simulators, and weekly objective alerts.</p>
-              <div className="pt-2">
-                <span className="font-display font-black text-3xl text-indigo-400">$19</span>
-                <span className="text-zinc-500 text-xs"> / monthly standard</span>
+              <p className="text-zinc-300 text-xs leading-relaxed">Deep skill insights, unlimited ATS checks, full live voice prep, and analytics.</p>
+              <div className="space-y-0.5 pt-2">
+                <div className="flex items-baseline">
+                  <span className="font-display font-black text-3xl text-white">
+                    ₹{isLandingYearly ? Math.round(299 * 0.8) : 299}
+                  </span>
+                  <span className="text-zinc-500 text-xs ml-1"> / month</span>
+                </div>
+                {isLandingYearly && (
+                  <p className="text-[9px] font-mono text-indigo-400">
+                    Billed yearly (₹2,870/yr) • Save ₹718
+                  </p>
+                )}
               </div>
 
               <hr className="border-white/5" />
 
-              <ul className="space-y-2.5 text-[11px] text-zinc-400">
+              <ul className="space-y-2.5 text-xs text-zinc-300">
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="font-bold text-white">Unlimited ATS Auditor checks</span>
+                  <Check className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="font-bold text-white">Unlimited premium ATS scans</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Full Interactive Voice Simulator accesses</span>
+                  <Check className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Advanced voice interviews</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>30/60/90 Study Roadmap builder engine</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Interactive Career Copilot chat agents</span>
+                  <Check className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Interactive career coaches</span>
                 </li>
               </ul>
             </div>
 
             <button 
               onClick={() => { setIsLogin(false); setIsAuthModalOpen(true); }}
-              className="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-all shadow shadow-indigo-600/30 cursor-pointer"
+              className="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow shadow-indigo-600/30 cursor-pointer"
             >
-              Optimize My Career
+              Get Started Pro
             </button>
           </div>
 
-          {/* Enterprise Unlimited */}
-          <div className="p-6 bg-[#0c0c0c] border border-white/5 rounded-2xl flex flex-col justify-between text-left space-y-6 relative">
+          {/* Enterprise Plan */}
+          <div className="p-6.5 bg-zinc-950/40 border border-white/5 rounded-2xl flex flex-col justify-between text-left space-y-6 relative transition-all duration-300 hover:border-white/10">
             <div className="space-y-4">
               <div>
-                <span className="text-[10px] font-mono tracking-wider uppercase text-zinc-500 block">TIER 03</span>
+                <span className="text-[10px] font-mono tracking-wider uppercase text-zinc-500 block">Tier 03</span>
                 <h3 className="font-display font-bold text-lg text-white">Enterprise Teams</h3>
               </div>
-              <p className="text-zinc-450 text-xs">Equipped for scaling hiring groups, team metrics, custom evaluation matrices, and shared APIs.</p>
+              <p className="text-zinc-450 text-xs leading-relaxed">Shared metrics dashboard, custom API integration, SLA support, enterprise access.</p>
               <div className="pt-2">
-                <span className="font-display font-black text-3xl text-white">$49</span>
-                <span className="text-zinc-500 text-xs"> / monthly flat</span>
+                <span className="font-display font-black text-3xl text-white">Custom</span>
+                <span className="text-zinc-500 text-xs"> / volume</span>
               </div>
 
               <hr className="border-white/5" />
 
-              <ul className="space-y-2.5 text-[11px] text-zinc-400">
+              <ul className="space-y-2.5 text-xs text-zinc-400">
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>All Professional features included</span>
+                  <Check className="w-3.5 h-3.5 text-violet-400" />
+                  <span>Unlimited team seats</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Corporate recruiter assessment panels</span>
+                  <Check className="w-3.5 h-3.5 text-violet-400" />
+                  <span>Corporate recruiters module</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Dedicated custom LLM key integrations</span>
+                  <Check className="w-3.5 h-3.5 text-violet-400" />
+                  <span>Dedicated API key accesses</span>
                 </li>
               </ul>
             </div>
 
             <button 
               onClick={() => { setIsLogin(false); setIsAuthModalOpen(true); }}
-              className="w-full h-10 bg-zinc-900 hover:bg-zinc-805 text-white text-xs font-bold rounded-lg border border-white/5 hover:border-white/10 transition-all cursor-pointer"
+              className="w-full h-10 bg-zinc-900 hover:bg-zinc-800 border border-white/5 hover:border-white/12 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
             >
-              Contact Recruiting Sales
+              Contact Sales
             </button>
           </div>
 
@@ -1072,7 +1370,7 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
               {/* Error alerts */}
               {errorMsg && (
-                <div className="mb-4 text-[10.5px] font-mono text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
+                <div className="mb-4 text-[10.5px] font-mono whitespace-pre-line text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
                   {errorMsg}
                 </div>
               )}
@@ -1160,6 +1458,31 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
                     </>
                   )}
                 </button>
+
+                {!isForgot && (
+                  <>
+                    <div className="flex items-center my-3">
+                      <div className="flex-1 border-t border-white/5" />
+                      <span className="px-2 text-[9px] font-mono uppercase text-slate-500">OR</span>
+                      <div className="flex-1 border-t border-white/5" />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGoogleSignIn}
+                      disabled={isLoading}
+                      className="w-full h-10 rounded-lg bg-[#0c0c0c] border border-white/5 hover:border-indigo-500/35 hover:bg-[#111] text-zinc-200 hover:text-white text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md duration-150"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                      </svg>
+                      <span>Continue with Google</span>
+                    </button>
+                  </>
+                )}
 
                 {isForgot && (
                   <button

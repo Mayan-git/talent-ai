@@ -15,6 +15,8 @@ export interface User {
   skills?: string[];
   role?: "admin" | "user";
   experienceLevel?: "Junior" | "Mid-level" | "Senior" | "Executive";
+  plan?: "Free" | "Pro" | "Enterprise" | string;
+  photoURL?: string;
 }
 
 // Resume Analysis Types
